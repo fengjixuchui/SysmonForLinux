@@ -49,7 +49,7 @@ cmake_policy(SET CMP0048 NEW)
 #
 # set the project name - version is MAJOR.MINOR.PATCH.RELEASE - releases start at 1
 #
-project(SysmonForLinux VERSION 1.0.0.1)
+project(SysmonForLinux VERSION 1.0.1.1)
 configure_file(linuxVersion.h.in linuxVersion.h)
 configure_file(package/DEBIAN.in/control.in DEBIANcontrol)
 configure_file(package/SPECS.in/spec.in SPECS.spec)
@@ -365,7 +365,7 @@ add_custom_command(OUTPUT yoursleep
 # automatically generate sources from manifest.xml and manifest.tt
 #
 add_custom_command(OUTPUT sysmonevents.h.utf16
-                   COMMAND "${TEXTTRANSFORM}" "${SYSMON_COMMON_SOURCE_DIR}/manifest.tt" -out sysmonevents.h.utf16 -a '!!type!header'
+                   COMMAND "mono" "${TEXTTRANSFORM}" "${SYSMON_COMMON_SOURCE_DIR}/manifest.tt" -out sysmonevents.h.utf16 -a '!!type!header'
                    COMMENT "Extracting sysmonevents.h.utf16"
                    DEPENDS "${SYSMON_COMMON_SOURCE_DIR}/manifest.tt"
                    )
@@ -377,7 +377,7 @@ add_custom_command(OUTPUT sysmonevents.h
                    )
 
 add_custom_command(OUTPUT sysmonmsg.mc.utf16
-                   COMMAND "${TEXTTRANSFORM}" "${SYSMON_COMMON_SOURCE_DIR}/manifest.tt" -out sysmonmsg.mc.utf16 -a '!!version!internal' -a '!!type!mc'
+                   COMMAND "mono" "${TEXTTRANSFORM}" "${SYSMON_COMMON_SOURCE_DIR}/manifest.tt" -out sysmonmsg.mc.utf16 -a '!!version!internal' -a '!!type!mc'
                    COMMENT "Extracting sysmonmsg.mc.utf16"
                    DEPENDS "${SYSMON_COMMON_SOURCE_DIR}/manifest.tt"
                    )
@@ -395,7 +395,7 @@ add_custom_command(OUTPUT sysmonmsg.h
                    )
 
 add_custom_command(OUTPUT sysmonmsgop.man.utf16
-                   COMMAND "${TEXTTRANSFORM}" "${SYSMON_COMMON_SOURCE_DIR}/manifest.tt" -out sysmonmsgop.man.utf16 -a '!!version!internal' -a '!!type!man'
+                   COMMAND "mono" "${TEXTTRANSFORM}" "${SYSMON_COMMON_SOURCE_DIR}/manifest.tt" -out sysmonmsgop.man.utf16 -a '!!version!internal' -a '!!type!man'
                    COMMENT "Extracting sysmonmsgop.man.utf16"
                    DEPENDS "${SYSMON_COMMON_SOURCE_DIR}/manifest.tt"
                    )
@@ -510,7 +510,7 @@ set(CLANG_INCLUDES
 # function to make ebpf programs
 function(build_ebpf ebpfsrc)
     add_custom_command(OUTPUT ${ebpfsrc}.o
-                       COMMAND "${CLANG}" -nostdinc -isystem `gcc -print-file-name=include` ${CLANG_INCLUDES} ${CLANG_DEFINES} -O2 ${CLANG_OPTIONS} -emit-llvm -c "${CMAKE_SOURCE_DIR}/ebpfKern/${ebpfsrc}.c" -o -| "${LLC}" -march=bpf -filetype=obj -o "${ebpfsrc}.o"
+                       COMMAND "${CLANG}" -nostdinc -isystem `gcc -print-file-name=include` ${CLANG_INCLUDES} ${CLANG_DEFINES} -O2 ${CLANG_OPTIONS} -emit-llvm -fno-stack-protector -c "${CMAKE_SOURCE_DIR}/ebpfKern/${ebpfsrc}.c" -o -| "${LLC}" -march=bpf -filetype=obj -o "${ebpfsrc}.o"
                        COMMENT "Building EBPF object ${ebpfsrc}.o"
                        DEPENDS ebpfKern/${ebpfsrc}.c ${EBPF_DEPENDS}
                        )

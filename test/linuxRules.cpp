@@ -150,7 +150,7 @@ TEST( Rules, WideString )
         { "\xc2\x90\xf0\x92\x8d\x85 ", {0x0090, 0xd808, 0xdf45, ' ', 0}, 8, 5 }
     };
 
-    for( auto CONST test : WideStrings ) {
+    for( auto CONST& test : WideStrings ) {
         EXPECT_EQ( WideStrlen( test.str1 ), test.str1len );
         EXPECT_EQ( WideStrlen( test.str2 ), test.str2len );
         EXPECT_EQ( WideStrcmp( test.str1, test.str2 ) == 0, test.strEqual );
@@ -182,7 +182,7 @@ TEST( Rules, WideString )
         EXPECT_EQ( test.lower, WideTolower( test.upper ) );
     }
 
-    for( auto CONST conv : WideConv ) {
+    for( auto CONST& conv : WideConv ) {
         CHAR utf8[32];
         WCHAR utf16[32];
         EXPECT_EQ( UTF8toUTF16( NULL, conv.utf8str, 0 ), conv.utf16count );
@@ -269,6 +269,25 @@ TEST( Process, ProcessName )
     }
 }
 
+// fetchSessionId get the session identifier for the process. If CONFIG_AUDIT is not set, return -1 as Sysmon would.
+ULONG fetchSessionId( pid_t ProcessId )
+{
+    ULONG sessionId;
+    FILE *fp;
+    char filename[32];
+
+    snprintf( filename, 32, "/proc/%d/sessionid", ProcessId );
+    fp = fopen( filename, "r" );
+    if( fp == NULL ) {
+
+        return -1;
+    }
+
+    fscanf( fp, "%d", &sessionId );
+    fclose( fp );
+
+    return sessionId;
+}
 
 // ProcessInfo tests the GetProcessInfo function in linuxHelpers.cpp
 TEST( Process, ProcessInfo )
@@ -281,9 +300,6 @@ TEST( Process, ProcessInfo )
     ULONG ppid = 0;
     const pid_t myPid = getpid();
     ULONG sessionId = 0;
-    ULONG actualSessionId = 0;
-    char filename[32];
-    FILE *fp = NULL;
     ULONGLONG processKeys[10];
     char mysleep[] = "./mysleep";
     char* args[2] = { mysleep, NULL };
@@ -305,12 +321,7 @@ TEST( Process, ProcessInfo )
         // startTime is in 100ns intervals, allow a second leeway
         EXPECT_TRUE( abs(timeinseconds - (startTime / (1000 * 1000 * 10))) <= 1 );
         EXPECT_EQ( ppid, myPid );
-        snprintf(filename, 32, "/proc/%d/sessionid", child);
-        fp = fopen(filename, "r");
-        ASSERT_TRUE(fp != NULL);
-        fscanf(fp, "%d", &actualSessionId);
-        fclose(fp);
-        EXPECT_EQ( sessionId, actualSessionId );
+        EXPECT_EQ( sessionId, fetchSessionId( child ) );
         // check if process keys are unique
         for (unsigned int j=0; j<i; j++) {
             EXPECT_TRUE( processKeys[i] != processKeys[j] );
@@ -344,9 +355,6 @@ TEST( Process, GetProcess )
     char *ptr = NULL;
     char* cmdline_copy = NULL;
     PSYSMON_PROCESS_CREATE pc = NULL;
-    ULONG actualSessionId = 0;
-    char filename[32];
-    FILE *fp = NULL;
 
     SetBootTime();
 
@@ -414,12 +422,7 @@ TEST( Process, GetProcess )
         // startTime is in 100ns intervals, allow a second leeway
         EXPECT_TRUE( abs(timeinseconds - (pc->m_CreateTime.QuadPart / (1000 * 1000 * 10))) <= 1 );
         EXPECT_EQ( pc->m_ParentProcessId, myPid );
-        snprintf(filename, 32, "/proc/%d/sessionid", child);
-        fp = fopen(filename, "r");
-        ASSERT_TRUE(fp != NULL);
-        fscanf(fp, "%d", &actualSessionId);
-        fclose(fp);
-        EXPECT_EQ( pc->m_SessionId, actualSessionId );
+        EXPECT_EQ( pc->m_SessionId, fetchSessionId( child ) );
         // check if process keys are unique
         processKeys[i] = pc->m_ProcessKey;
         for (unsigned int j=0; j<i; j++) {
@@ -708,8 +711,6 @@ TEST( Process, FormatSyslogString )
     unlink("/tmp/sysmonUnitTest.FormatSyslogString");
 }
 
-extern LIST_ENTRY g_ProcessCache;
-
 char FakeSyslog[4096];
 extern "C" {
 VOID syslogHelper( int priority, const char* fmt, const char *msg )
@@ -730,8 +731,6 @@ TEST( Events, DispatchEvent )
     ULONG eventSize = 0;
     size_t len = 0;
     int eventIdFd = 0;
-
-	ProcessCacheInitialize();
 
 	*FakeSyslog = 0x00;
 
