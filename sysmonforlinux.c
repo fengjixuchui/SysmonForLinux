@@ -47,11 +47,14 @@
 #include "linuxHelpers.h"
 #include "sysmon_defs.h"
 #include "linuxVersion.h"
-#include "eula.h"
 #include "networkTracker.h"
 #include "installer.h"
 
+#include "missingdefs.h"
+
 #define EVENT_BUFFER_SIZE (49 * 1024)
+
+#define BTF_KERNEL_FILE "/sys/kernel/btf/vmlinux"
 
 #define STARTUP_SEM_NAME "/sysmon-startup"
 
@@ -71,6 +74,7 @@ double                  g_bootSecSinceEpoch = 0;
 BOOLEAN                 g_DebugMode = FALSE;
 BOOLEAN                 g_DebugModeVerbose = FALSE;
 CRITICAL_SECTION        g_DebugModePrintCriticalSection;
+char*                   btfPath;
 
 typedef TCHAR _bstr_t;
 
@@ -91,68 +95,68 @@ const char                      *defPaths[] =
     {"./", "./sysmonEBPF", "/opt/sysmon/", "/opt/sysmon/sysmonEBPF"};
 
 const ebpfSyscallTPprog         TPenterProgs[] =
-{   {EBPF_GENERIC_SYSCALL, "sysmon/generic/enterN"}
+{   {EBPF_GENERIC_SYSCALL, "genericEnterN"}
 };
 
 const ebpfSyscallTPprog         TPexitProgs[] =
-{   {__NR_execve, "sysmon/ProcCreate/exit"},
-    {__NR_execveat, "sysmon/ProcCreate/exit"},
-    {__NR_creat, "sysmon/FileCreate/exit"},
-    {__NR_open, "sysmon/FileOpen/exit"},
-    {__NR_openat, "sysmon/FileOpen/exit"},
-    {__NR_unlink, "sysmon/FileDelete/exit"},
-    {__NR_unlinkat, "sysmon/FileDeleteAt/exit"},
-    {__NR_unlinkat, "sysmon/FileDeleteAtCwd/exit"},
-    {__NR_accept, "sysmon/TCPaccept/exit"},
-    {__NR_accept4, "sysmon/TCPaccept/exit"},
-    {__NR_ptrace, "sysmon/ProcAccessed/exit"},
-    {__NR_recvfrom, "sysmon/UDPrecv/exit"},
-    {__NR_recvmsg, "sysmon/UDPrecv/exit"},
-    {__NR_recvmmsg, "sysmon/UDPrecv/exit"},
-    {__NR_read, "sysmon/UDPrecv/exit"},
-    {__NR_close, "sysmon/CloseFD/exit"}
+{   {__NR_execve, "ProcCreateExit"},
+    {__NR_execveat, "ProcCreateExit"},
+    {__NR_creat, "FileCreateExit"},
+    {__NR_open, "FileOpenExit"},
+    {__NR_openat, "FileOpenExit"},
+    {__NR_unlink, "FileDeleteExit"},
+    {__NR_unlinkat, "FileDeleteAtExit"},
+    {__NR_unlinkat, "FileDeleteAtCwdExit"},
+    {__NR_accept, "TCPacceptExit"},
+    {__NR_accept4, "TCPacceptExit"},
+    {__NR_ptrace, "ProcAccessedExit"},
+    {__NR_recvfrom, "UDPrecvExit"},
+    {__NR_recvmsg, "UDPrecvExit"},
+    {__NR_recvmmsg, "UDPrecvExit"},
+    {__NR_read, "UDPrecvExit"},
+    {__NR_close, "CloseFDExit"}
 };
 
 const ebpfSyscallRTPprog        RTPenterProgs[] =
 {
-    {"sysmon/generic/rawEnter", EBPF_GENERIC_SYSCALL}
+    {"genericRawEnter", EBPF_GENERIC_SYSCALL}
 };
 
 const ebpfSyscallRTPprog        RTPexitProgs[] =
 {
-    {"sysmon/ProcCreate/rawExit", __NR_execve},
-    {"sysmon/ProcCreate/rawExit", __NR_execveat},
-    {"sysmon/FileCreate/rawExit", __NR_creat},
-    {"sysmon/FileOpen/rawExit", __NR_open},
-    {"sysmon/FileOpen/rawExit", __NR_openat},
-    {"sysmon/FileOpen/rawExit", __NR_RAWACCESS},
-    {"sysmon/FileOpen/rawExit", __NR_CREATE},
-    {"sysmon/FileDelete/rawExit", __NR_unlink},
-    {"sysmon/FileDeleteAt/rawExit", __NR_unlinkat},
-    {"sysmon/FileDeleteAtCwd/rawExit", __NR_unlinkat},
-    {"sysmon/TCPaccept/rawExit", __NR_accept},
-    {"sysmon/TCPaccept/rawExit", __NR_accept4},
-    {"sysmon/TCPaccept/rawExit", __NR_NETWORK},
-    {"sysmon/ProcAccessed/rawExit", __NR_ptrace},
-    {"sysmon/UDPrecv/rawExit", __NR_recvfrom},
-    {"sysmon/UDPrecv/rawExit", __NR_recvmsg},
-    {"sysmon/UDPrecv/rawExit", __NR_recvmmsg},
-    {"sysmon/UDPrecv/rawExit", __NR_read},
-    {"sysmon/CloseFD/rawExit", __NR_close}
+    {"ProcCreateRawExit", __NR_execve},
+    {"ProcCreateRawExit", __NR_execveat},
+    {"FileCreateRawExit", __NR_creat},
+    {"FileOpenRawExit", __NR_open},
+    {"FileOpenRawExit", __NR_openat},
+    {"FileOpenRawExit", __NR_RAWACCESS},
+    {"FileOpenRawExit", __NR_CREATE},
+    {"FileDeleteRawExit", __NR_unlink},
+    {"FileDeleteAtRawExit", __NR_unlinkat},
+    {"FileDeleteAtCwdRawExit", __NR_unlinkat},
+    {"TCPacceptRawExit", __NR_accept},
+    {"TCPacceptRawExit", __NR_accept4},
+    {"TCPacceptRawExit", __NR_NETWORK},
+    {"ProcAccessedRawExit", __NR_ptrace},
+    {"UDPrecvRawExit", __NR_recvfrom},
+    {"UDPrecvRawExit", __NR_recvmsg},
+    {"UDPrecvRawExit", __NR_recvmmsg},
+    {"UDPrecvRawExit", __NR_read},
+    {"CloseFDRawExit", __NR_close}
 };
 
 const ebpfTracepointProg        otherTPprogs4_15[] =
 {
-    {"sched", "sched_process_exit", "sysmon/sched_process_exit", __NR_PROCTERM},
-    {"tcp", "tcp_set_state", "sysmon/tcp_set_state", __NR_NETWORK},
-    {"skb", "consume_skb", "sysmon/consume_skb", __NR_NETWORK}
+    {"sched", "sched_process_exit", "ProcTerminated", __NR_PROCTERM},
+    {"tcp", "tcp_set_state", "TCPconnectionOld", __NR_NETWORK},
+    {"skb", "consume_skb", "UDPsend", __NR_NETWORK}
 };
 
 const ebpfTracepointProg        otherTPprogs4_16[] =
 {
-    {"sched", "sched_process_exit", "sysmon/sched_process_exit", __NR_PROCTERM},
-    {"sock", "inet_sock_set_state", "sysmon/inet_sock_set_state", __NR_NETWORK},
-    {"skb", "consume_skb", "sysmon/consume_skb", __NR_NETWORK}
+    {"sched", "sched_process_exit", "ProcTerminated", __NR_PROCTERM},
+    {"sock", "inet_sock_set_state", "TCPconnection", __NR_NETWORK},
+    {"skb", "consume_skb", "UDPsend", __NR_NETWORK}
 };
 
 const ebpfTelemetryMapObject    mapObjects[] =
@@ -163,7 +167,6 @@ const ebpfTelemetryMapObject    mapObjects[] =
 
 // this holds the FDs for the above maps
 int mapFds[sizeof(mapObjects) / sizeof(*mapObjects)];
-
 
 //--------------------------------------------------------------------
 //
@@ -660,65 +663,6 @@ CheckRootPrivs()
     }
 }
 
-
-//--------------------------------------------------------------------
-//
-// AcceptEula
-//
-// Record acceptance of the EULA by creating the file
-// /opt/sysmon/eula_accepted
-//
-//--------------------------------------------------------------------
-void
-AcceptEula()
-{
-    struct stat dir;
-    FILE* fp = NULL;
-
-    if (stat(SYSMON_INSTALL_DIR, &dir)) {
-        mkdir(SYSMON_INSTALL_DIR, S_IRWXU);
-    }
-    fp = fopen(SYSMON_EULA_FILE, "w");
-    if (fp != NULL) {
-        fclose(fp);
-    }
-}
-
-//--------------------------------------------------------------------
-//
-// EulaAccepted
-//
-// Check if the EULA has already been accepted by checking for the
-// existance of the file /opt/sysmon/eula_accepted
-//
-//--------------------------------------------------------------------
-BOOL
-EulaAccepted()
-{
-    struct stat eula_stat;
-
-    if (stat(SYSMON_EULA_FILE, &eula_stat) == 0) {
-        return TRUE;
-    } else {
-        return FALSE;
-    }
-}
-
-//--------------------------------------------------------------------
-//
-// ShowEula
-//
-// Display the EULA text.
-//
-//--------------------------------------------------------------------
-void
-ShowEula()
-{
-    printf("%s\n\n", RawEulaText);
-    printf("This is the first run of this program. You must accept EULA to run Sysmon.\n");
-    printf("Use -accepteula to accept EULA.\n\n");
-}
-
 //--------------------------------------------------------------------
 //
 // WriteRulesBlob
@@ -919,7 +863,7 @@ bool setConfigFromStoredArgv(
     //
     // Parse the command line using the data from manifest.xml
     //
-    if( !ParseCommandLine( argc, argv, &rules, &rulesSize, 
+    if( !ParseCommandLine( argc, argv, &rules, &rulesSize,
             &parsedConfigFile, configHash, _countof( configHash ) ) ) {
         fprintf( stderr, "Could not parse new rules\n" );
         free( argv );
@@ -1098,12 +1042,12 @@ main(
 	//
 	// Parse the command line using the data from manifest.xml
 	//
-	if( !ParseCommandLine( argc, argv, &rules, &rulesSize, 
+	if( !ParseCommandLine( argc, argv, &rules, &rulesSize,
 					&configFile, configHash, _countof( configHash) ) ) {
 
 		return Usage( argv[0], &csbi );
 	}
- 
+
     //
     // Initialize and load any user-specified max field sizes
     //
@@ -1127,7 +1071,7 @@ main(
         return ERROR_INVALID_PARAMETER;
     }
 
-    if( OPT_SET(ClipboardInstance) || 
+    if( OPT_SET(ClipboardInstance) ||
         OPT_SET(DriverName) ||
         OPT_SET(ArchiveDirectory) ||
         OPT_SET(CaptureClipboard) ||
@@ -1142,7 +1086,7 @@ main(
         g_DebugMode = TRUE;
         debugModeOption = OPT_VALUE( DebugMode );
         if( debugModeOption ) {
-            
+
             if( _tcsicmp( debugModeOption, _T("verbose") ) ) {
                 _tprintf( _T( "Possible options for DebugMode: verbose\n\n" ) );
                 return ERROR_INVALID_PARAMETER;
@@ -1152,15 +1096,6 @@ main(
     }
 
     CheckRootPrivs();
-
-    if (OPT_SET(AcceptEula)) {
-        AcceptEula();
-    }
-
-    if (!EulaAccepted() && !OPT_SET(AcceptEula)) {
-        ShowEula();
-        return ERROR_INVALID_PARAMETER;
-    }
 
     if ( OPT_SET(UnInstall) ) {
         const char *uninstallModeOption = OPT_VALUE( UnInstall );
@@ -1182,7 +1117,7 @@ main(
 
     if ( OPT_SET(Configuration) ) {
         if( OPT_VALUE(Configuration) == NULL ) {
-            
+
             nothingToChange = !HasCustomConfiguration();
         } else {
 
@@ -1260,6 +1195,13 @@ main(
 
     if ( OPT_SET(Install) ) {
 
+        killOtherSysmon(true); // just to be sure
+
+        if (!installFiles(true)) {
+            fprintf(stderr, "Cannot install Sysmon files\n");
+            exit(1);
+        }
+
         if ( !OPT_SET(Service) ) {
             stopSysmonService();
 
@@ -1288,18 +1230,11 @@ main(
             }
         }
 
-        killOtherSysmon(true); // just to be sure
-
-        if (!installFiles(true)) {
-            fprintf(stderr, "Cannot install Sysmon files\n");
-            exit(1);
-        }
-
         //
         // If Sysmon is not currently running as a service (e.g. started by
         // systemd or init.d) then start it as a service by replacing this
         // execution with the shell invoker that starts the service.  If
-        // Sysmon is already running as a service, or it cannot start as a 
+        // Sysmon is already running as a service, or it cannot start as a
         // service (missing systemd and missing init.d) then continue.
         //
         startSysmonService();
@@ -1312,8 +1247,19 @@ main(
         memset( activeSyscalls, 0, sizeof( activeSyscalls ) );
         setConfigFromStoredArgv( &configFile, activeSyscalls );
 
+        if ( OPT_SET(BTF) ) {
+            btfPath = OPT_VALUE( BTF );
+        }
 
-        const ebpfTelemetryObject   kernelObjs[] = 
+        bool debug = false;
+        if( OPT_SET( DebugMode ) ) {
+            debug = true;
+        }
+
+        struct stat st;
+        bool btfEnabled = stat(BTF_KERNEL_FILE, &st) < 0 ? false : true;
+
+        const ebpfTelemetryObject   kernelObjs[] =
         {
             {
                 KERN_4_15_OBJ, {4, 15}, {4, 16}, false,
@@ -1383,16 +1329,89 @@ main(
             }
         };
 
+        ebpfTelemetryObject   kernelObjs_core[] =
+        {
+            {
+                KERN_4_15_CORE_OBJ, {4, 15}, {4, 16}, false,
+                sizeof(TPenterProgs) / sizeof(*TPenterProgs),
+                TPenterProgs,
+                sizeof(TPexitProgs) / sizeof(*TPexitProgs),
+                TPexitProgs,
+                0, NULL, 0, NULL, // No raw tracepoint programs
+                activeSyscalls,
+                sizeof(otherTPprogs4_15) / sizeof(*otherTPprogs4_15),
+                otherTPprogs4_15
+            },
+            {
+                KERN_4_16_CORE_OBJ, {4, 16}, {4, 17}, false,
+                sizeof(TPenterProgs) / sizeof(*TPenterProgs),
+                TPenterProgs,
+                sizeof(TPexitProgs) / sizeof(*TPexitProgs),
+                TPexitProgs,
+                0, NULL, 0, NULL, // No raw tracepoint programs
+                activeSyscalls,
+                sizeof(otherTPprogs4_16) / sizeof(*otherTPprogs4_15),
+                otherTPprogs4_16
+            },
+            {
+                KERN_4_17_5_1_CORE_OBJ, {4, 17}, {5, 2}, true,
+                0, NULL, 0, NULL, // No traditional tracepoint programs
+                sizeof(RTPenterProgs) / sizeof(*RTPenterProgs),
+                RTPenterProgs,
+                sizeof(RTPexitProgs) / sizeof(*RTPexitProgs),
+                RTPexitProgs,
+                activeSyscalls,
+                sizeof(otherTPprogs4_16) / sizeof(*otherTPprogs4_16),
+                otherTPprogs4_16
+            },
+            {
+                KERN_5_2_CORE_OBJ, {5, 2}, {5, 3}, true,
+                0, NULL, 0, NULL, // No traditional tracepoint programs
+                sizeof(RTPenterProgs) / sizeof(*RTPenterProgs),
+                RTPenterProgs,
+                sizeof(RTPexitProgs) / sizeof(*RTPexitProgs),
+                RTPexitProgs,
+                activeSyscalls,
+                sizeof(otherTPprogs4_16) / sizeof(*otherTPprogs4_16),
+                otherTPprogs4_16
+            },
+            {
+                KERN_5_3_5_5_CORE_OBJ, {5, 3}, {5, 6}, true,
+                0, NULL, 0, NULL, // No traditional tracepoint programs
+                sizeof(RTPenterProgs) / sizeof(*RTPenterProgs),
+                RTPenterProgs,
+                sizeof(RTPexitProgs) / sizeof(*RTPexitProgs),
+                RTPexitProgs,
+                activeSyscalls,
+                sizeof(otherTPprogs4_16) / sizeof(*otherTPprogs4_16),
+                otherTPprogs4_16
+            },
+            {
+                KERN_5_6__CORE_OBJ, {5, 6}, {0, 0}, true,
+                0, NULL, 0, NULL, // No traditional tracepoint programs
+                sizeof(RTPenterProgs) / sizeof(*RTPenterProgs),
+                RTPenterProgs,
+                sizeof(RTPexitProgs) / sizeof(*RTPexitProgs),
+                RTPexitProgs,
+                activeSyscalls,
+                sizeof(otherTPprogs4_16) / sizeof(*otherTPprogs4_16),
+                otherTPprogs4_16
+            }
+        };
+
+
         const ebpfTelemetryConfig sysmonConfig = (ebpfTelemetryConfig)
         {
             g_bootSecSinceEpoch,
             true, // enable raw socket capture
-            sizeof(kernelObjs) / sizeof(*kernelObjs),
-            kernelObjs,
+            btfEnabled ? sizeof(kernelObjs_core) / sizeof(*kernelObjs_core) : sizeof(kernelObjs) / sizeof(*kernelObjs),
+            btfEnabled ? kernelObjs_core : kernelObjs,
             sizeof(defPaths) / sizeof(*defPaths),
             defPaths,
             sizeof(mapObjects) / sizeof(*mapObjects),
-            mapObjects
+            mapObjects,
+            btfPath,
+            debug
         };
 
         //
